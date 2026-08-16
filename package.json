@@ -28,9 +28,10 @@
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit",
-    "test": "npm run check",
+    "test": "node --import tsx --test --experimental-test-coverage src/**/*.test.ts",
     "preview": "node --experimental-strip-types src/preview.ts",
     "gallery": "node --experimental-strip-types src/gallery.ts",
+    "simulate": "node scripts/simulate.js",
     "prepublishOnly": "npm run build"
   },
   "keywords": [

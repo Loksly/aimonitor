@@ -1,0 +1,51 @@
+{
+  "//": "Guardar este archivo en ~/.aimonitor/config.json para personalizar la configuración",
+  
+  "rail": {
+    "enabled": true,
+    "width": 356
+  },
+  
+  "tile": {
+    "min": 320,
+    "max": 430,
+    "gap": 12
+  },
+  
+  "margin": 14,
+  "headerHeight": 60,
+  "spineWidth": 7,
+  
+  "pixelShift": {
+    "enabled": true,
+    "amplitude": 2,
+    "periodMs": 480000
+  },
+  
+  "zombieMs": 900000,
+  
+  "usage": {
+    "mode": "api",
+    "dailyCap": 15.0,
+    "monthlyCap": 300.0,
+    "refreshMs": 60000
+  },
+  
+  "thresholds": {
+    "warn": 0.6,
+    "alert": 0.85
+  },
+  
+  "trcc": {
+    "bin": "trcc",
+    "extraArgs": []
+  },
+  
+  "blankWhenIdle": true,
+  
+  "fonts": {
+    "condensedBold": "/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf",
+    "mono": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf",
+    "monoBold": "/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf"
+  }
+}
