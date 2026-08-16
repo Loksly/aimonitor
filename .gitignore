@@ -1,0 +1,18 @@
+# Dependencias
+node_modules/
+
+# Compilación y distribución
+dist/
+
+# Previews locales (se regeneran en CI/CD)
+preview/
+
+# Carpetas de estado local
+.aimonitor/
+.claude-lcd/
+
+# Archivos de sistema y logs
+.DS_Store
+Thumbs.db
+*.log
+.npm

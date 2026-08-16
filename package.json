@@ -1,0 +1,38 @@
+{
+  "name": "aimonitor",
+  "version": "1.0.0",
+  "description": "Dashboard de sesiones de Claude Code y Gemini para el panel LCD USB Thermalright Trofeo Vision",
+  "main": "dist/src/render.js",
+  "bin": {
+    "aimonitor-hook": "./dist/src/hook.js",
+    "aimonitor-daemon": "./dist/src/daemon.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit",
+    "preview": "node --experimental-strip-types src/preview.ts",
+    "gallery": "node --experimental-strip-types src/gallery.ts",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "claude",
+    "claude-code",
+    "gemini",
+    "lcd",
+    "thermalright",
+    "trcc",
+    "dashboard",
+    "monitor"
+  ],
+  "author": "Loksly",
+  "license": "MIT",
+  "type": "module",
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.6"
+  },
+  "devDependencies": {
+    "@types/node": "^26.2.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.9.3"
+  }
+}

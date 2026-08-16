@@ -1,0 +1,4 @@
+# Reglas udev para el panel LCD Thermalright Trofeo Vision (0416:5408)
+# Permite al usuario de la sesión actual escribir al dispositivo USB sin necesidad de root
+
+SUBSYSTEM=="usb", ATTR{idVendor}=="0416", ATTR{idProduct}=="5408", MODE="0666", TAG+="uaccess"
