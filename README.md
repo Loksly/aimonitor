@@ -27,7 +27,7 @@ Este proyecto convierte tu panel de hardware secundario en una "sala de control"
 Puedes instalarlo de manera global en tu sistema para usar los binarios directamente:
 
 ```bash
-npm install -g aimonitor
+npm install -g @loksly/aimonitor
 ```
 
 ### 1. Configurar Reglas Udev (Linux)

@@ -1,5 +1,5 @@
 {
-  "name": "aimonitor",
+  "name": "@loksly/aimonitor",
   "version": "1.0.0",
   "description": "Dashboard de sesiones de Claude Code y Gemini para el panel LCD USB Thermalright Trofeo Vision",
   "main": "dist/src/render.js",
