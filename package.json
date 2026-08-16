@@ -7,9 +7,28 @@
     "aimonitor-hook": "./dist/src/hook.js",
     "aimonitor-daemon": "./dist/src/daemon.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Loksly/aimonitor.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Loksly/aimonitor/issues"
+  },
+  "homepage": "https://github.com/Loksly/aimonitor#readme",
+  "files": [
+    "dist",
+    "aimonitor.service",
+    "99-trcc.rules",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=24.0.0"
+  },
   "scripts": {
     "build": "tsc",
     "check": "tsc --noEmit",
+    "test": "npm run check",
     "preview": "node --experimental-strip-types src/preview.ts",
     "gallery": "node --experimental-strip-types src/gallery.ts",
     "prepublishOnly": "npm run build"
