@@ -1,13 +1,29 @@
 [Unit]
 Description=aimonitor LCD Status Dashboard Daemon
-After=network.target
+After=graphical-session.target trcc-serve.service
+# El daemon manda los frames por la API de trcc; sin ese proceso el panel
+# vuelve al logo de fabrica a los 2-3 segundos.
+Wants=trcc-serve.service
 
 [Service]
 Type=simple
-# Arranca el daemon utilizando la variable de entorno PATH de la sesión de usuario
+
+# systemd NO lee tu ~/.bashrc ni ~/.profile, así que el PATH de la unidad no
+# incluye ni nvm ni ~/.local/bin. Sin esto el daemon arranca pero no encuentra
+# `trcc` (panel a oscuras) ni `ccusage` (carril permanentemente obsoleto).
+#
+#   ~/.local/bin  -> trcc, instalado con pipx
+#   nvm bin       -> node, aimonitor-daemon, ccusage
+#
+# AJUSTA la ruta de nvm a la tuya. Compruébala con:  dirname "$(which node)"
+Environment=PATH=%h/.local/bin:%h/.nvm/versions/node/v24.19.0/bin:/usr/local/bin:/usr/bin:/bin
+
 ExecStart=/usr/bin/env aimonitor-daemon
 Restart=always
 RestartSec=5
+
+# Al parar, el daemon deja el panel a negro; dale margen para ese último envío.
+TimeoutStopSec=30
 
 [Install]
 WantedBy=default.target

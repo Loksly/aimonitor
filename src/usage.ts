@@ -1,35 +1,82 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { UsageSnapshot } from './types.ts';
+import type { UsageSnapshot, UsageWindow } from './types.ts';
 import type { Config } from './config.ts';
 
 const execAsync = promisify(exec);
 
-interface CcusageTokenData {
-  input?: number;
-  output?: number;
-  cache_creation?: number;
-  cache_read?: number;
+/**
+ * Formas reales que devuelve `ccusage --json`, verificadas contra la salida del
+ * binario. Ojo: `daily`/`weekly`/`monthly` usan `totalCost` y contadores planos,
+ * mientras que `blocks` usa `costUSD` y los anida en `tokenCounts`. No es el
+ * mismo esquema, aunque lo parezca.
+ */
+interface CcusageModelBreakdown {
+  modelName?: string;
+  cost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
 }
 
-interface CcusageRow {
-  model?: string;
+interface CcusagePeriodRow {
+  /** Fecha de inicio del periodo, `YYYY-MM-DD`. */
+  period?: string;
+  totalTokens?: number;
+  totalCost?: number;
+  inputTokens?: number;
+  outputTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
+  modelsUsed?: string[];
+  modelBreakdowns?: CcusageModelBreakdown[];
+}
+
+interface CcusagePeriodReport {
+  daily?: CcusagePeriodRow[];
+  weekly?: CcusagePeriodRow[];
+  monthly?: CcusagePeriodRow[];
+  totals?: { totalCost?: number; totalTokens?: number };
+}
+
+interface CcusageBlock {
+  id?: string;
+  startTime?: string;
+  endTime?: string;
+  isActive?: boolean;
+  isGap?: boolean;
+  totalTokens?: number;
   costUSD?: number;
-  tokens?: CcusageTokenData;
 }
 
-interface CcusageReport {
-  daily?: CcusageRow[];
-  monthly?: CcusageRow[];
-  totals?: {
-    costUSD?: number;
-    tokens?: CcusageTokenData;
-  };
+interface CcusageBlocksReport {
+  blocks?: CcusageBlock[];
 }
 
-async function runCmd(cmd: string): Promise<CcusageReport | CcusageRow[]> {
-  const { stdout } = await execAsync(cmd);
-  return JSON.parse(stdout);
+const DAY_MS = 86_400_000;
+
+/** Quita el prefijo de familia para que el nombre quepa en el carril. */
+function shortModel(name: string): string {
+  return name.replace(/^claude-/, '');
+}
+
+/**
+ * Percentil sobre valores ya filtrados. `p` = 100 devuelve el máximo absoluto,
+ * que es la calibración por defecto: el 100% de la barra es la sesión más
+ * cargada del histórico del propio usuario.
+ */
+function percentile(values: number[], p: number): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((p / 100) * sorted.length) - 1));
+  return sorted[idx]!;
+}
+
+/** Ratio acotado a 0..1; sin denominador no hay barra que pintar. */
+function safeRatio(value: number, denom: number): number | null {
+  if (!Number.isFinite(denom) || denom <= 0) return null;
+  return Math.min(1, Math.max(0, value / denom));
 }
 
 export async function fetchUsage(cfg: Config): Promise<UsageSnapshot> {
@@ -40,83 +87,112 @@ export async function fetchUsage(cfg: Config): Promise<UsageSnapshot> {
     byModel: [],
   };
 
+  const bin = cfg.usage.bin;
+  const run = async <T>(args: string): Promise<T> => {
+    const { stdout } = await execAsync(`${bin} ${args}`, { timeout: 30_000, maxBuffer: 32 * 1024 * 1024 });
+    return JSON.parse(stdout) as T;
+  };
+
+  // Pie común (tokens de hoy y reparto por modelo): sale de `daily` en ambos modos.
+  let dailyRow: CcusagePeriodRow | undefined;
+  let dailyReport: CcusagePeriodReport | undefined;
   try {
-    if (cfg.usage.mode === 'api') {
-      let dailyCost = 0;
-      let dailyTokens = 0;
-      const modelMap = new Map<string, number>();
-
-      try {
-        const dailyData = await runCmd('ccusage daily --json');
-        if (dailyData && !Array.isArray(dailyData) && dailyData.totals) {
-          dailyCost = dailyData.totals.costUSD ?? 0;
-          const t = dailyData.totals.tokens ?? {};
-          dailyTokens = (t.input ?? 0) + (t.output ?? 0) + (t.cache_creation ?? 0) + (t.cache_read ?? 0);
-        }
-        
-        // Mapear por modelo si viene un array de registros o una lista "daily"
-        const rows = Array.isArray(dailyData) 
-          ? dailyData 
-          : (dailyData && !Array.isArray(dailyData) ? dailyData.daily : undefined);
-
-        if (Array.isArray(rows)) {
-          for (const row of rows) {
-            const cost = row.costUSD ?? 0;
-            const t = row.tokens ?? {};
-            const sum = (t.input ?? 0) + (t.output ?? 0) + (t.cache_creation ?? 0) + (t.cache_read ?? 0);
-            
-            if (dailyCost === 0) dailyCost += cost; // Si no hay total, acumulamos
-            if (dailyTokens === 0) dailyTokens += sum;
-
-            if (row.model) {
-              const modelName = row.model.replace('claude-3-5-', ''); // Acortamos nombre para pantalla
-              modelMap.set(modelName, (modelMap.get(modelName) ?? 0) + sum);
-            }
-          }
-        }
-      } catch (err) {
-        console.warn('Advertencia leyendo ccusage daily:', err instanceof Error ? err.message : err);
-        snapshot.stale = true;
-      }
-
-      let monthlyCost = 0;
-      try {
-        const monthlyData = await runCmd('ccusage monthly --json');
-        if (monthlyData && !Array.isArray(monthlyData) && monthlyData.totals) {
-          monthlyCost = monthlyData.totals.costUSD ?? 0;
-        } else if (Array.isArray(monthlyData)) {
-          for (const row of monthlyData) {
-            monthlyCost += row.costUSD ?? 0;
-          }
-        } else if (monthlyData && !Array.isArray(monthlyData) && Array.isArray(monthlyData.monthly)) {
-          for (const row of monthlyData.monthly) {
-            monthlyCost += row.costUSD ?? 0;
-          }
-        }
-      } catch (err) {
-        console.warn('Advertencia leyendo ccusage monthly:', err instanceof Error ? err.message : err);
-        snapshot.stale = true;
-      }
-
-      snapshot.spend = [
-        { label: 'Hoy', amount: dailyCost, cap: cfg.usage.dailyCap },
-        { label: 'Mes', amount: monthlyCost, cap: cfg.usage.monthlyCap },
-      ];
-      snapshot.tokensToday = dailyTokens;
-      snapshot.byModel = Array.from(modelMap.entries()).map(([model, tokens]) => ({ model, tokens }));
-
-    } else {
-      // Modo max: simula las ventanas de límite ya que max se rige por ventanas de tiempo
-      snapshot.windows = [
-        { label: 'Ventana 5 h', ratio: 0.15, resetsAt: Date.now() + 2.5 * 3600_000 },
-        { label: 'Semana', ratio: 0.35, resetsAt: Date.now() + 24 * 3600_000 * 3 },
-      ];
-      snapshot.tokensToday = 0;
+    dailyReport = await run<CcusagePeriodReport>('daily --json');
+    dailyRow = dailyReport.daily?.at(-1);
+    if (dailyRow) {
+      snapshot.tokensToday = dailyRow.totalTokens ?? 0;
+      snapshot.byModel = (dailyRow.modelBreakdowns ?? [])
+        .filter((m) => m.modelName)
+        .map((m) => ({
+          model: shortModel(m.modelName!),
+          tokens:
+            (m.inputTokens ?? 0) +
+            (m.outputTokens ?? 0) +
+            (m.cacheCreationTokens ?? 0) +
+            (m.cacheReadTokens ?? 0),
+        }))
+        .sort((a, b) => b.tokens - a.tokens);
     }
   } catch (err) {
-    console.error('Error crítico consultando ccusage:', err);
+    console.warn('Aviso: falló `ccusage daily --json`:', err instanceof Error ? err.message : err);
     snapshot.stale = true;
   }
 
+  if (cfg.usage.mode === 'api') {
+    const dailyCost = dailyRow?.totalCost ?? 0;
+    let monthlyCost = 0;
+    try {
+      const monthly = await run<CcusagePeriodReport>('monthly --json');
+      monthlyCost = monthly.monthly?.at(-1)?.totalCost ?? monthly.totals?.totalCost ?? 0;
+    } catch (err) {
+      console.warn('Aviso: falló `ccusage monthly --json`:', err instanceof Error ? err.message : err);
+      snapshot.stale = true;
+    }
+    snapshot.spend = [
+      { label: 'Hoy', amount: dailyCost, cap: cfg.usage.dailyCap },
+      { label: 'Mes', amount: monthlyCost, cap: cfg.usage.monthlyCap },
+    ];
+    return snapshot;
+  }
+
+  // ── Modo max ────────────────────────────────────────────────────────────────
+  // `ccusage` no publica el límite del plan, así que el 100% se calibra contra
+  // el histórico propio. Si no hay histórico suficiente, se omite la barra en
+  // lugar de inventarse un porcentaje: una barra falsa en rojo es peor que
+  // ninguna barra en este diseño.
+  const { metric, lookbackDays, percentile: p } = cfg.usage.calibration;
+  const cutoff = lookbackDays > 0 ? Date.now() - lookbackDays * DAY_MS : 0;
+  const windows: UsageWindow[] = [];
+
+  try {
+    const { blocks = [] } = await run<CcusageBlocksReport>('blocks --json');
+    const real = blocks.filter((b) => !b.isGap);
+    const active = real.find((b) => b.isActive);
+    const value = (b: CcusageBlock) => (metric === 'cost' ? (b.costUSD ?? 0) : (b.totalTokens ?? 0));
+
+    const history = real
+      .filter((b) => !b.isActive && (!cutoff || Date.parse(b.startTime ?? '') >= cutoff))
+      .map(value)
+      .filter((v) => v > 0);
+
+    const ratio = active ? safeRatio(value(active), percentile(history, p)) : 0;
+    if (ratio !== null) {
+      windows.push({
+        label: 'Ventana 5 h',
+        ratio,
+        resetsAt: active?.endTime ? Date.parse(active.endTime) : undefined,
+      });
+    }
+  } catch (err) {
+    console.warn('Aviso: falló `ccusage blocks --json`:', err instanceof Error ? err.message : err);
+    snapshot.stale = true;
+  }
+
+  try {
+    const { weekly = [] } = await run<CcusagePeriodReport>('weekly --json');
+    const current = weekly.at(-1);
+    const value = (r: CcusagePeriodRow) => (metric === 'cost' ? (r.totalCost ?? 0) : (r.totalTokens ?? 0));
+
+    const history = weekly
+      .slice(0, -1)
+      .filter((r) => !cutoff || Date.parse(r.period ?? '') >= cutoff)
+      .map(value)
+      .filter((v) => v > 0);
+
+    const ratio = current ? safeRatio(value(current), percentile(history, p)) : null;
+    if (ratio !== null) {
+      const start = Date.parse(current!.period ?? '');
+      windows.push({
+        label: 'Semana',
+        ratio,
+        resetsAt: Number.isFinite(start) ? start + 7 * DAY_MS : undefined,
+      });
+    }
+  } catch (err) {
+    console.warn('Aviso: falló `ccusage weekly --json`:', err instanceof Error ? err.message : err);
+    snapshot.stale = true;
+  }
+
+  snapshot.windows = windows;
   return snapshot;
 }

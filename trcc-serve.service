@@ -1,0 +1,32 @@
+[Unit]
+Description=trcc REST API (dueño exclusivo del panel LCD Thermalright)
+Documentation=https://github.com/Lexonight1/thermalright-trcc-linux
+After=graphical-session.target
+
+# Por qué existe esta unidad:
+#
+# El interfaz USB del panel es de acceso EXCLUSIVO: dos procesos de trcc no
+# pueden hablarle a la vez ("interface is in use by another process").
+#
+# Y el firmware LY descarta la imagen y vuelve al logo de fábrica pasados
+# ~2-3 s sin recibir un frame, así que hace falta un bucle que la reenvíe
+# varias veces por segundo.
+#
+# Las dos cosas juntas obligan a que un único proceso posea el dispositivo y
+# sirva tanto el reenvío como los frames nuevos. Ese proceso es este; aimonitor
+# le habla por HTTP en lugar de abrir el USB por su cuenta.
+
+[Service]
+Type=simple
+
+# trcc se instala con pipx en ~/.local/bin, que no está en el PATH de systemd.
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# Sólo en loopback: la API no lleva autenticación por defecto.
+ExecStart=/usr/bin/env trcc serve --host 127.0.0.1 --port 8099
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

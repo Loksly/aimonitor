@@ -25,20 +25,35 @@
   "zombieMs": 900000,
   
   "usage": {
-    "mode": "api",
+    "//mode": "'max' pinta ventanas de 5 h y semana; 'api' pinta gasto en USD contra los topes de abajo",
+    "mode": "max",
+    "bin": "ccusage",
+    "refreshMs": 120000,
+
+    "//calibration": "Solo en modo max. ccusage no expone el límite del plan, así que el 100% de las barras se calibra contra tu propio histórico: metric 'cost' usa el coste equivalente, percentile 100 = tu bloque más cargado de los últimos lookbackDays. Bájalo a 90 si las barras se quedan siempre pegadas al suelo.",
+    "calibration": {
+      "metric": "cost",
+      "lookbackDays": 30,
+      "percentile": 100
+    },
+
+    "//caps": "Solo en modo api, en USD",
     "dailyCap": 15.0,
-    "monthlyCap": 300.0,
-    "refreshMs": 60000
+    "monthlyCap": 300.0
   },
-  
+
   "thresholds": {
     "warn": 0.6,
     "alert": 0.85
   },
-  
+
   "trcc": {
+    "//": "La CLI real es `trcc display send-image <VID:PID> <png>`. deviceKey vacío = autodetectar con `trcc detect` al arrancar.",
     "bin": "trcc",
-    "extraArgs": []
+    "deviceKey": "",
+    "extraArgs": [],
+    "//timeoutMs": "trcc arranca un intérprete Python en cada frame; el timeout tiene que cubrirlo",
+    "timeoutMs": 20000
   },
   
   "blankWhenIdle": true,

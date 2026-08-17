@@ -25,13 +25,17 @@ export const STATE_COLOR: Record<SessionState, string> = {
   inactiva: '#2E8A82',
 };
 
-/** Rótulo en versalitas de cada estado. */
+/**
+ * Rótulo en versalitas de cada estado. Sin emoji a propósito: las fuentes son
+ * DejaVu Condensed y Mono, que no traen glifos de emoji, así que cualquiera se
+ * pinta como una caja vacía. El color y el peso ya dicen el estado.
+ */
 export const STATE_LABEL: Record<SessionState, string> = {
-  permiso: '🛑 Permiso',
-  espera: '⏳ Espera',
-  listo: '✨ Listo',
-  activa: '🔄 Activa',
-  inactiva: '💤 Inactiva',
+  permiso: 'Permiso',
+  espera: 'Espera',
+  listo: 'Listo',
+  activa: 'Activa',
+  inactiva: 'Inactiva',
 };
 
 /** Mayor número = más urgente. Ordena qué casilla se lleva el peso sólido. */
@@ -66,15 +70,48 @@ export interface Config {
   /** Consumo. */
   usage: {
     mode: 'max' | 'api';
+    /** Binario de `ccusage`. Se resuelve por PATH salvo que sea ruta absoluta. */
+    bin: string;
     /** Topes en USD para el modo API. */
     dailyCap: number;
     monthlyCap: number;
     refreshMs: number;
+    /**
+     * Modo max: `ccusage` expone consumo pero **no** el límite del plan, así que
+     * el 100% de las barras se calibra contra el propio histórico del usuario.
+     * La barra responde a "cómo va esto contra mi sesión más cargada", no
+     * contra un tope de Anthropic, que no es observable desde aquí.
+     */
+    calibration: {
+      /** `cost` usa el coste equivalente (mejor proxy de quema de plan). */
+      metric: 'cost' | 'tokens';
+      /** Días de histórico a considerar; 0 = todo. */
+      lookbackDays: number;
+      /** Percentil del histórico que marca el 100%. 100 = máximo absoluto. */
+      percentile: number;
+    };
   };
   /** Umbrales del semáforo compartido por barras y casillas. */
   thresholds: { warn: number; alert: number };
-  /** Salida al panel. */
-  trcc: { bin: string; extraArgs: string[] };
+  /** Salida al panel, vía la API REST de `trcc serve`. */
+  trcc: {
+    bin: string;
+    /** Clave `VID:PID` del panel. Vacío = coger el primero que reporte el servidor. */
+    deviceKey: string;
+    extraArgs: string[];
+    timeoutMs: number;
+    /**
+     * El USB es de acceso exclusivo, así que un solo proceso (`trcc serve`)
+     * posee el dispositivo y este daemon le habla por HTTP.
+     */
+    api: { url: string };
+    /**
+     * El firmware LY vuelve al logo de fábrica pasados ~2-3 s sin frame nuevo.
+     * Este bucle reenvía el último frame para dejar la imagen fija; es barato
+     * porque no vuelve a renderizar nada.
+     */
+    keepalive: { enabled: boolean; intervalS: number };
+  };
   /** Sin sesiones, el panel se queda a negro (es el backlight lo que se gasta). */
   blankWhenIdle: boolean;
   fonts: { condensedBold: string; mono: string; monoBold: string };
@@ -94,9 +131,23 @@ export const DEFAULT_CONFIG: Config = {
   spineWidth: 7,
   pixelShift: { enabled: true, amplitude: 2, periodMs: 8 * 60_000 },
   zombieMs: 15 * 60_000,
-  usage: { mode: 'max', dailyCap: 25, monthlyCap: 400, refreshMs: 60_000 },
+  usage: {
+    mode: 'max',
+    bin: 'ccusage',
+    dailyCap: 25,
+    monthlyCap: 400,
+    refreshMs: 60_000,
+    calibration: { metric: 'cost', lookbackDays: 30, percentile: 100 },
+  },
   thresholds: { warn: 0.6, alert: 0.85 },
-  trcc: { bin: 'trcc', extraArgs: [] },
+  trcc: {
+    bin: 'trcc',
+    deviceKey: '',
+    extraArgs: [],
+    timeoutMs: 20_000,
+    api: { url: 'http://127.0.0.1:8099' },
+    keepalive: { enabled: true, intervalS: 0.15 },
+  },
   blankWhenIdle: true,
   fonts: {
     condensedBold: '/usr/share/fonts/truetype/dejavu/DejaVuSansCondensed-Bold.ttf',

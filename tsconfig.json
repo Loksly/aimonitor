@@ -3,7 +3,9 @@
     "target": "ES2023",
     "module": "nodenext",
     "moduleResolution": "nodenext",
-    "lib": ["ES2023"],
+    "lib": [
+      "ES2023"
+    ],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "verbatimModuleSyntax": true,
@@ -13,7 +15,19 @@
     "outDir": "dist",
     "rootDir": ".",
     "skipLibCheck": true,
-    "types": ["node"]
+    "types": [
+      "node"
+    ]
   },
-  "include": ["src/**/*.ts", "*.ts"]
+  "include": [
+    "src/**/*.ts",
+    "*.ts"
+  ],
+  "exclude": [
+    "src/docs.ts",
+    "src/gallery.ts",
+    "src/**/*.test.ts",
+    "node_modules",
+    "dist"
+  ]
 }

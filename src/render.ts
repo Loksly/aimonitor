@@ -171,7 +171,7 @@ function drawTile(ctx: SKRSContext2D, t: Tile, x: number, y: number, w: number, 
 
   // 6. Pie: ficheros pendientes de commit
   if (r.dirty !== undefined) {
-    const txt = r.dirty === 0 ? '📁 git limpio' : `📁 git ${r.dirty} sin commit`;
+    const txt = r.dirty === 0 ? 'git limpio' : `git ${r.dirty} sin commit`;
     drawClipped(ctx, txt, cx, footerBase, cw, { size: 16, family: MONO, color: ink.faint });
   }
 }

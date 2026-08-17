@@ -34,6 +34,11 @@ jobs:
     - name: Regenerate all preview PNGs
       run: npm run preview -- --all --out preview
 
+    # Los docs se generan ANTES que la galería: la navegación se construye
+    # listando docs/, así que la galería necesita saber qué páginas existen.
+    - name: Render docs/*.md to HTML
+      run: npm run docs
+
     - name: Generate Gallery HTML
       run: npm run gallery
 
