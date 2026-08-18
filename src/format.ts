@@ -46,3 +46,8 @@ export function money(n: number): string {
 export function percent(ratio: number): string {
   return `${Math.round(ratio * 100)}%`;
 }
+
+/** Tamaño en GB, que es la unidad en la que se piensa la RAM y el disco. */
+export function gigabytes(bytes: number): string {
+  return `${Math.round(bytes / 1024 ** 3)}GB`;
+}

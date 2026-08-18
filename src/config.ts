@@ -93,6 +93,30 @@ export interface Config {
   };
   /** Umbrales del semáforo compartido por barras y casillas. */
   thresholds: { warn: number; alert: number };
+  /**
+   * Columna de vitales que rellena el ancho sobrante cuando hay pocas sesiones.
+   * Con 4 o más casillas no sobra sitio y desaparece sola.
+   */
+  system: {
+    enabled: boolean;
+    /** Por debajo de este ancho no se dibuja: no cabe nada legible. */
+    minWidth: number;
+    /** Por debajo de este ancho se omiten las barras por núcleo. */
+    perCoreMinWidth: number;
+    /** Sistema de ficheros a vigilar. */
+    diskPath: string;
+    /**
+     * Umbrales propios, más altos que los del consumo. Una RAM al 65 % o un
+     * disco al 70 % son un martes cualquiera: con los umbrales del carril
+     * (0,6/0,85) la columna viviría encendida en ámbar y competiría con las
+     * consolas que sí reclaman al operador.
+     */
+    warn: number;
+    alert: number;
+    /** Umbrales de temperatura de CPU, en grados Celsius. */
+    tempWarn: number;
+    tempAlert: number;
+  };
   /** Salida al panel, vía la API REST de `trcc serve`. */
   trcc: {
     bin: string;
@@ -110,7 +134,18 @@ export interface Config {
      * Este bucle reenvía el último frame para dejar la imagen fija; es barato
      * porque no vuelve a renderizar nada.
      */
-    keepalive: { enabled: boolean; intervalS: number };
+    keepalive: {
+      enabled: boolean;
+      intervalS: number;
+      /**
+       * Duración de cada ráfaga. El bucle se pide acotado y se renueva, en vez
+       * de abrirlo sin fin: una petición abierta sobrevive a la muerte del
+       * daemon, deja al servidor con un bucle huérfano que bloquea todos los
+       * GET, y entonces el daemon siguiente no puede ni detectar el panel.
+       * Acotado, cualquier huérfano caduca solo en este plazo.
+       */
+      burstS: number;
+    };
   };
   /** Sin sesiones, el panel se queda a negro (es el backlight lo que se gasta). */
   blankWhenIdle: boolean;
@@ -140,13 +175,23 @@ export const DEFAULT_CONFIG: Config = {
     calibration: { metric: 'cost', lookbackDays: 30, percentile: 100 },
   },
   thresholds: { warn: 0.6, alert: 0.85 },
+  system: {
+    enabled: true,
+    minWidth: 190,
+    perCoreMinWidth: 700,
+    diskPath: '/',
+    warn: 0.85,
+    alert: 0.95,
+    tempWarn: 85,
+    tempAlert: 95,
+  },
   trcc: {
     bin: 'trcc',
     deviceKey: '',
     extraArgs: [],
     timeoutMs: 20_000,
     api: { url: 'http://127.0.0.1:8099' },
-    keepalive: { enabled: true, intervalS: 0.15 },
+    keepalive: { enabled: true, intervalS: 0.15, burstS: 30 },
   },
   blankWhenIdle: true,
   fonts: {
@@ -186,4 +231,25 @@ export function ratioColor(ratio: number, t = DEFAULT_CONFIG.thresholds): string
   if (ratio >= t.alert) return STATE_COLOR.permiso;
   if (ratio >= t.warn) return STATE_COLOR.espera;
   return STATE_COLOR.listo;
+}
+
+/**
+ * Color de un vital de la máquina.
+ *
+ * No sirve `ratioColor`: ése devuelve azul (el color de `listo`) por debajo del
+ * 60 %, y la columna de sistema brillaría en reposo compitiendo con las casillas
+ * que sí reclaman al operador. Aquí la normalidad es apagada, y sólo se enciende
+ * al cruzar los umbrales.
+ */
+export function vitalColor(ratio: number, t: { warn: number; alert: number } = DEFAULT_CONFIG.system): string {
+  if (ratio >= t.alert) return STATE_COLOR.permiso;
+  if (ratio >= t.warn) return STATE_COLOR.espera;
+  return PALETTE.INK_DIM;
+}
+
+/** Lo mismo para la temperatura, que va en grados y no en razón 0..1. */
+export function tempColor(celsius: number, cfg: Config['system']): string {
+  if (celsius >= cfg.tempAlert) return STATE_COLOR.permiso;
+  if (celsius >= cfg.tempWarn) return STATE_COLOR.espera;
+  return PALETTE.INK_DIM;
 }

@@ -7,7 +7,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DEFAULT_CONFIG, loadConfig, type Config } from './config.ts';
-import { SCENARIOS, T0, USAGE_API, USAGE_MAX } from './fixtures.ts';
+import { SCENARIOS, SYSTEM, T0, USAGE_API, USAGE_MAX } from './fixtures.ts';
 import { renderFrame } from './render.ts';
 import type { UsageSnapshot } from './types.ts';
 
@@ -112,7 +112,7 @@ function main(): void {
   for (const name of names) {
     const sessions = SCENARIOS[name];
     if (!sessions) throw new Error(`Escenario desconocido: ${name}. Prueba --list.`);
-    const png = renderFrame({ sessions, usage: usageData, config, now: args.now, shift });
+    const png = renderFrame({ sessions, usage: usageData, system: SYSTEM, config, now: args.now, shift });
     const file = args.all ? join(outDir, `${name}.png`) : (args.out ?? `preview/${name}.png`);
     writeFileSync(file, png);
     console.log(`${file}  ${config.width}x${config.height}  ${(png.length / 1024).toFixed(0)} KB`);

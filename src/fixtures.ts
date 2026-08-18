@@ -1,4 +1,4 @@
-import type { Provider, SessionRecord, SessionState, UsageSnapshot } from './types.ts';
+import type { BlockPoint, Provider, SessionRecord, SessionState, SystemSnapshot, UsageSnapshot } from './types.ts';
 
 /** Instante fijo: los previews deben ser reproducibles byte a byte. */
 export const T0 = Date.parse('2026-08-16T17:42:00');
@@ -34,12 +34,35 @@ function rec(spec: Spec, now = T0): SessionRecord {
   };
 }
 
+/**
+ * Vitales fijos. El disco va al 91 % a propósito: es el único vital encendido,
+ * y sirve para comprobar de un vistazo que la columna sólo se ilumina cuando
+ * algo se sale de rango y no por defecto.
+ */
+export const SYSTEM: SystemSnapshot = {
+  cpuTemp: 71,
+  cpuUsage: 0.23,
+  cores: [0.62, 0.18, 0.41, 0.07, 0.93, 0.12, 0.05, 0.33, 0.28, 0.02, 0.51, 0.09, 0.16, 0.04, 0.71, 0.11],
+  load: 0.23,
+  mem: { used: 26 * 1024 ** 3, total: 62 * 1024 ** 3 },
+  disk: { used: 240 * 1024 ** 3, total: 265 * 1024 ** 3, path: '/datos' },
+  uptime: 836 * 3600,
+};
+
+/** Doce bloques de 5 h con forma reconocible; el último es el que está en curso. */
+const BLOCKS: BlockPoint[] = [18.4, 46.2, 3.1, 31.7, 29.5, 1.2, 12.8, 9.4, 22.6, 5.7, 38.9, 14.3].map((cost, i, all) => ({
+  cost,
+  startTime: T0 - (all.length - 1 - i) * 5 * 3_600_000,
+  active: i === all.length - 1,
+}));
+
 export const USAGE_MAX: UsageSnapshot = {
   mode: 'max',
   windows: [
     { label: 'Ventana 5 h', ratio: 0.42, resetsAt: T0 + min(134) },
     { label: 'Semana', ratio: 0.88, resetsAt: T0 + min(3_180) },
   ],
+  blockHistory: BLOCKS,
   tokensToday: 4_230_000,
   byModel: [
     { model: 'opus-5', tokens: 2_900_000 },
@@ -54,6 +77,7 @@ export const USAGE_API: UsageSnapshot = {
     { label: 'Hoy', amount: 11.4, cap: 25 },
     { label: 'Mes', amount: 268, cap: 400 },
   ],
+  blockHistory: BLOCKS,
   tokensToday: 4_230_000,
   byModel: [
     { model: 'opus-5', tokens: 2_900_000 },
@@ -75,6 +99,12 @@ export const SCENARIOS: Record<string, SessionRecord[]> = {
     rec({ id: 'b2c3d4e5-2222', project: 'aimonitor', state: 'espera', detail: 'esperando entrada del usuario', ago: min(18) + s(7), dirty: 11, provider: 'gemini' }),
     rec({ id: 'c3d4e5f6-3333', project: 'panel-api', state: 'listo', detail: 'Stop', ago: min(1) + s(4), dirty: 0, provider: 'gemini' }),
     rec({ id: 'd4e5f6a7-4444', project: 'dotfiles', state: 'activa', detail: 'Grep "registerFromPath"', ago: s(9), dirty: 1 }),
+  ],
+
+  /** Dos casillas: la columna cabe pero no llega para las barras por núcleo. */
+  dos: [
+    rec({ id: 'a1b2c3d4-1111', project: 'aimonitor', state: 'permiso', detail: 'Bash: npm publish', ago: min(2) + s(18), dirty: 3 }),
+    rec({ id: 'b2c3d4e5-2222', project: 'trcc-linux', state: 'activa', detail: 'Read src/adapters/device/transport.py', ago: s(24), dirty: 0 }),
   ],
 
   'nombre-largo': [

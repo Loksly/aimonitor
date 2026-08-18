@@ -228,7 +228,7 @@ keepalive pasa a reenviar el frame **nuevo**. Los cambios se propagan.
 
 Menos de lo que parece, y desde luego menos de lo que costaría no hacerlo:
 
-* Un frame son **~145 KB** (PNG comprimido), no 1,7 MB.
+* Un frame son **~145 KB** en el bus (el PNG ronda los 60-85 KB), no 1,7 MB.
 * Clavarlo a 0,15 s son **~1 MB/s** sobre un bus de 480 Mbps: **menos del 2 %**.
 * El trabajo **caro** (componer el canvas, consultar git, leer `ccusage`)
   **sigue disparándose por eventos**. Lo único periódico es reenviar bytes ya
@@ -362,6 +362,52 @@ En modo `api` se muestra el gasto de hoy y del mes contra `dailyCap` y
 
 ---
 
+## La columna de vitales
+
+Cuando hay pocas consolas sobra mucho ancho: **1088 px con una sesión**, 646 con
+dos y 204 con tres. A partir de cuatro casillas no sobra nada. Ese hueco lo
+ocupa una columna con la temperatura de CPU, el uso por núcleo, la RAM, el disco
+y una sparkline del gasto por bloque de 5 h.
+
+Se adapta al sitio disponible:
+
+| Ancho sobrante | Qué se dibuja |
+|---|---|
+| ≥ 700 px | cuatro cifras + **una barra por núcleo** + sparkline con el pico |
+| 380–700 px | cuatro cifras + barra de disco con detalle + sparkline |
+| 190–380 px | rejilla 2×2 de cifras + sparkline compacta |
+| < 190 px | nada: no cabe nada legible |
+
+> 💡 **Los umbrales son propios y más altos que los del consumo** (0,85 / 0,95
+> frente a 0,6 / 0,85). No es un descuido: una RAM al 70 % es un martes
+> cualquiera, y con los umbrales del carril la columna viviría encendida en
+> ámbar compitiendo con las consolas que sí reclaman al operador. En normalidad
+> la columna se lee **apagada**; sólo se enciende al cruzar el umbral.
+
+Todo se lee de `/proc`, `/sys` y `os`: **ninguna dependencia nueva** y ninguna
+llamada de red. En particular **no** se usa la API de sensores de `trcc`, por lo
+que se explica en la nota de abajo.
+
+Se ajusta en `~/.aimonitor/config.json`:
+
+```json
+"system": {
+  "enabled": true,
+  "minWidth": 190,
+  "perCoreMinWidth": 700,
+  "diskPath": "/",
+  "warn": 0.85,
+  "alert": 0.95,
+  "tempWarn": 85,
+  "tempAlert": 95
+}
+```
+
+`diskPath` es el sistema de ficheros que quieres vigilar; pon el del disco donde
+trabajas si no es el raíz.
+
+---
+
 ## Diagnóstico de problemas
 
 ### El panel sólo muestra el logo
@@ -467,6 +513,7 @@ Documentadas aquí porque cuestan un rato largo de depurar:
 | `keepalive` necesita un frame previo | Responde `400 No cached frame for keepalive` si arrancas el bucle antes de haber enviado nada. Manda un frame primero. |
 | El número de dispositivo cambia al replug | `/dev/bus/usb/003/004` → `.../007`. Un `USB device not found` justo después de un replug suele ser esto. |
 | `send-image` es efímero | *"no theme staging, no persistence"*. `load-image` sí persiste el tema, pero **ninguno de los dos evita** que el firmware descarte la imagen: eso sólo lo arregla el keepalive. |
+| Un `keepalive` sin fin sobrevive al cliente | Pedirlo con `count: 0` deja un bucle en el servidor que **no muere aunque muera quien lo pidió**. A partir de ahí el servidor sólo atiende POST y ningún GET, así que el siguiente daemon no puede ni detectar el panel y se queda esperando indefinidamente. Por eso `aimonitor` lo pide en **ráfagas acotadas** (`burstS`) que se renuevan: un huérfano caduca solo. |
 
 ---
 

@@ -47,13 +47,28 @@
     "alert": 0.85
   },
 
+  "//system": "Columna de vitales que rellena el hueco cuando hay pocas casillas (1088 px sobran con una sola sesión). Con 4 o más desaparece sola. Sus umbrales son más altos que los del consumo a propósito: una RAM al 70% es normal, y con 0.6 la columna viviría encendida compitiendo con las consolas que sí reclaman.",
+  "system": {
+    "enabled": true,
+    "minWidth": 190,
+    "perCoreMinWidth": 700,
+    "diskPath": "/",
+    "warn": 0.85,
+    "alert": 0.95,
+    "tempWarn": 85,
+    "tempAlert": 95
+  },
+
   "trcc": {
-    "//": "La CLI real es `trcc display send-image <VID:PID> <png>`. deviceKey vacío = autodetectar con `trcc detect` al arrancar.",
+    "//": "La salida va por la API REST de `trcc serve`, no por la CLI: el USB es exclusivo y un solo proceso debe poseerlo. deviceKey vacío = coger el primer panel que reporte el servidor.",
     "bin": "trcc",
     "deviceKey": "",
     "extraArgs": [],
-    "//timeoutMs": "trcc arranca un intérprete Python en cada frame; el timeout tiene que cubrirlo",
-    "timeoutMs": 20000
+    "//api": "Dónde escucha `trcc serve`. Sólo loopback: la API no lleva autenticación.",
+    "api": { "url": "http://127.0.0.1:8099" },
+    "timeoutMs": 20000,
+    "//keepalive": "El firmware LY descarta la imagen a los ~2-3 s sin frame. burstS acota cada ráfaga: si se pidiera un bucle sin fin, sobreviviría a la muerte del daemon y dejaría al servidor bloqueado para todo lo demás.",
+    "keepalive": { "enabled": true, "intervalS": 0.15, "burstS": 30 }
   },
   
   "blankWhenIdle": true,

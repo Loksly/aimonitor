@@ -11,6 +11,7 @@ import { promisify } from 'node:util';
 import { loadConfig, SESSIONS_DIR, type Config } from './config.ts';
 import { fetchUsage } from './usage.ts';
 import { renderFrame } from './render.ts';
+import { readSystem } from './system.ts';
 import { serverAlive, detectPanel, connectPanel, sendFrame, pinFrame } from './panel.ts';
 import type { SessionRecord, UsageSnapshot } from './types.ts';
 
@@ -222,10 +223,13 @@ async function renderAndSend() {
     // Leer sesiones actuales y resolver git
     const sessions = await loadSessions();
 
-    // Renderizar frame
+    // Renderizar frame. Los vitales se leen aquí, en cada frame: son lecturas de
+    // ficheros locales (microsegundos) y así el uso de CPU refleja el intervalo
+    // real entre renders.
     const pngBuffer = renderFrame({
       sessions,
       usage: currentUsage,
+      system: readSystem(config, { blockingSample: Boolean(previewPath) }),
       config,
       now,
     });

@@ -1,6 +1,6 @@
 import { exec } from 'node:child_process';
 import { promisify } from 'node:util';
-import type { UsageSnapshot, UsageWindow } from './types.ts';
+import type { BlockPoint, UsageSnapshot, UsageWindow } from './types.ts';
 import type { Config } from './config.ts';
 
 const execAsync = promisify(exec);
@@ -55,6 +55,9 @@ interface CcusageBlocksReport {
 }
 
 const DAY_MS = 86_400_000;
+
+/** Cuántos bloques de 5 h entran en la sparkline. ~2,5 días de contexto. */
+const SPARK_BLOCKS = 12;
 
 /** Quita el prefijo de familia para que el nombre quepa en el carril. */
 function shortModel(name: string): string {
@@ -154,6 +157,16 @@ export async function fetchUsage(cfg: Config): Promise<UsageSnapshot> {
       .filter((b) => !b.isActive && (!cutoff || Date.parse(b.startTime ?? '') >= cutoff))
       .map(value)
       .filter((v) => v > 0);
+
+    // La sparkline sale de estos mismos bloques: la llamada ya está hecha para
+    // calibrar, así que el histórico es gratis.
+    snapshot.blockHistory = real
+      .slice(-SPARK_BLOCKS)
+      .map<BlockPoint>((b) => ({
+        cost: b.costUSD ?? 0,
+        startTime: Date.parse(b.startTime ?? '') || 0,
+        active: b.isActive === true,
+      }));
 
     const ratio = active ? safeRatio(value(active), percentile(history, p)) : 0;
     if (ratio !== null) {

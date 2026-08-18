@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { claims, pruneZombies, order, assignWeights, plan } from './select.ts';
-import type { SessionRecord } from './types.ts';
+import { claims, pruneZombies, order, assignWeights, plan, spareWidth } from './select.ts';
 import { DEFAULT_CONFIG } from './config.ts';
+import type { SessionRecord } from './types.ts';
 
 const t0 = Date.now();
 
@@ -87,4 +87,44 @@ test('Selection: layout planning fits tiles or collapses to overflow', () => {
   assert.strictEqual(pTight.tiles.length < 5, true);
   assert.strictEqual(pTight.overflow.length > 0, true);
   assert.strictEqual(pTight.summaryWidth > 0, true);
+});
+
+test('Columna de sistema: aparece con pocas casillas y se retira con muchas', () => {
+  // El hueco medido sobre el layout real (1920 px, carril activo) es de 1088 px
+  // con una sesión y cero a partir de cuatro. La columna vive de ese sobrante.
+  const cfg = DEFAULT_CONFIG;
+  const available = cfg.width - 2 * cfg.margin - (cfg.rail.width + 18);
+  assert.equal(available, 1518);
+
+  const spare = (n: number) =>
+    spareWidth(plan(Array.from({ length: n }, (_, i) => mockRecord(`s${i}`, 'activa', 0)), available, cfg), available, cfg);
+
+  assert.equal(spare(1), 1088);
+  assert.equal(spare(2), 646);
+  assert.equal(spare(3), 204);
+  assert.ok(spare(4) < cfg.system.minWidth, 'con cuatro casillas ya no cabe');
+
+  // Y lo que de verdad importa: dónde está la frontera de dibujado.
+  assert.ok(spare(1) >= cfg.system.minWidth);
+  assert.ok(spare(2) >= cfg.system.minWidth);
+  assert.ok(spare(3) >= cfg.system.minWidth);
+});
+
+test('Columna de sistema: no compite con el resumen de desbordamiento', () => {
+  // Si hay sesiones de sobra, el resumen se queda el hueco y la columna no debe
+  // aparecer: pintar las dos las solaparía.
+  const cfg = DEFAULT_CONFIG;
+  const available = cfg.width - 2 * cfg.margin - (cfg.rail.width + 18);
+  const many = Array.from({ length: 9 }, (_, i) => mockRecord(`s${i}`, 'activa', 0));
+  const p = plan(many, available, cfg);
+  assert.ok(p.overflow.length > 0, 'este escenario desborda');
+  assert.ok(spareWidth(p, available, cfg) < cfg.system.minWidth);
+});
+
+test('Columna de sistema: introducirla no cambia el ancho de las casillas', () => {
+  // Regresión: el layout con 4+ casillas debe quedar idéntico al de antes.
+  const cfg = DEFAULT_CONFIG;
+  const available = cfg.width - 2 * cfg.margin - (cfg.rail.width + 18);
+  assert.equal(plan([mockRecord('a', 'activa', 0)], available, cfg).tileWidth, cfg.tile.max);
+  assert.equal(plan(Array.from({ length: 4 }, (_, i) => mockRecord(`s${i}`, 'activa', 0)), available, cfg).tileWidth, 370);
 });

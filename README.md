@@ -26,6 +26,7 @@ Este proyecto convierte tu panel de hardware secundario en una "sala de control"
     *   **Apagado Inteligente:** Pone la pantalla en negro absoluto (`#000000`) cuando no hay consolas activas, protegiendo la vida del *backlight*.
     *   **Pruning de Zombis:** Descarta automáticamente sesiones en segundo plano que hayan muerto sin cerrarse limpiamente.
     *   **Imagen fija (*keepalive*):** El firmware LY de este panel **descarta lo que muestra pasados ~2-3 s sin recibir un frame** y vuelve al logo de fábrica. El daemon mantiene la imagen clavada reenviándola cada 0,15 s, mientras el renderizado caro sigue disparándose sólo por eventos. [Por qué, en detalle →](https://loksly.github.io/aimonitor/instalacion.html#3-la-parte-que-no-es-obvia-por-que-hacen-falta-dos-servicios)
+*   **Columna de vitales adaptativa:** Con pocas consolas sobra mucho ancho (1088 px con una sola sesión). Ese hueco se llena con temperatura de CPU, uso **por núcleo**, RAM, disco y una sparkline del gasto por bloque de 5 h. Se encoge por niveles y desaparece sola a partir de cuatro casillas, sin tocar el layout. Todo se lee de `/proc`, `/sys` y `os`: cero dependencias nuevas. [Detalle →](https://loksly.github.io/aimonitor/instalacion.html#la-columna-de-vitales)
 *   **Resolución detectada, no supuesta:** El panel reporta **1920×462** en el *handshake*, no los 1920×480 que anuncian las tiendas. Todo el layout deriva de lo que diga el hardware al arrancar.
 *   **Información del Sistema:** Muestra de forma eficiente la memoria **RAM libre/total** en tiempo real y el estado **Git** (ficheros sucios sin commit) por sesión.
 *   **Métricas de Consumo Real:** Carril de consumo derecho integrado con la herramienta `ccusage` para rastrear tokens diarios, gasto acumulado en USD y desglose por modelo en tiempo real.
@@ -110,7 +111,7 @@ Juntas, obligan a que **un solo proceso** haga las dos cosas. De ahí
 `trcc serve`: posee el dispositivo, mantiene el bucle de reenvío y acepta
 frames nuevos por HTTP, serializando ambos.
 
-El coste es menor de lo que parece: un frame son ~145 KB (PNG), así que
+El coste es menor de lo que parece: la carga que `trcc` pone en el bus son ~145 KB por frame (el PNG que genera el daemon pesa 60-85 KB), así que
 clavarlo a 0,15 s son ~1 MB/s sobre un bus de 480 Mbps. El renderizado caro
 (canvas, git, `ccusage`) **sigue disparándose por eventos**; lo único
 periódico es el reenvío, que no vuelve a dibujar nada.
@@ -231,6 +232,8 @@ El sitio publicado sale de `preview/`:
 *   `src/hook.ts` - CLI de entrada que traduce eventos de IA a archivos JSON de sesión de forma atómica.
 *   `src/daemon.ts` - Proceso de fondo reactivo que vigila archivos, ejecuta git, actualiza uso y renderiza.
 *   `src/panel.ts` - Capa de salida: habla con la API de `trcc serve` y mantiene la imagen fija en el panel.
+*   `src/system.ts` - Vitales de la máquina desde `/proc`, `/sys` y `os`, sin dependencias.
+*   `src/sparkline.ts` - Geometría pura de la sparkline (sin canvas, por eso es testeable).
 *   `src/usage.ts` - Adaptador para parsear la salida JSON real de `ccusage`.
 *   `src/render.ts` - Motor gráfico que compone la cabecera, casillas, reloj y carril derecho.
 *   `src/select.ts` - Algoritmo que planifica cuántas casillas caben y cómo agrupar las sobrantes.

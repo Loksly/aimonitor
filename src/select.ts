@@ -89,3 +89,15 @@ export function plan(records: SessionRecord[], available: number, cfg: Config): 
     summaryWidth: visible < all.length ? summaryWidth : 0,
   };
 }
+
+/**
+ * Ancho que sobra a la derecha de las casillas, donde cabe la columna de
+ * vitales. Se saca aquí, fuera del render, para poder comprobarlo sin dibujar.
+ *
+ * Cuando hay desbordamiento el resumen ya se come el sobrante, así que la
+ * columna y el resumen no pueden coincidir nunca.
+ */
+export function spareWidth(p: Plan, available: number, cfg: Config): number {
+  const used = p.tiles.length * p.tileWidth + Math.max(0, p.tiles.length - 1) * cfg.tile.gap;
+  return available - used - (p.summaryWidth ? p.summaryWidth + cfg.tile.gap : 0);
+}

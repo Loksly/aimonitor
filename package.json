@@ -28,7 +28,7 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && chmod +x dist/src/hook.js dist/src/daemon.js",
     "check": "tsc --noEmit",
     "test": "node --import tsx --test --experimental-test-coverage src/**/*.test.ts",
     "preview": "node --experimental-strip-types src/preview.ts",

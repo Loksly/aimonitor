@@ -114,6 +114,9 @@ export async function sendFrame(cfg: Config, key: string, png: Buffer): Promise<
 export function pinFrame(cfg: Config, key: string, onError: (msg: string) => void): () => void {
   let stopped = false;
   const controller = new AbortController();
+  const { intervalS, burstS } = cfg.trcc.keepalive;
+  // Ráfaga acotada y renovada, nunca `count: 0`. Ver el comentario de `burstS`.
+  const count = Math.max(1, Math.round(burstS / intervalS));
 
   const loop = async () => {
     while (!stopped) {
@@ -121,19 +124,20 @@ export function pinFrame(cfg: Config, key: string, onError: (msg: string) => voi
         const res = await fetch(url(cfg, key, '/display/keepalive'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ count: 0, interval_s: cfg.trcc.keepalive.intervalS }),
+          body: JSON.stringify({ count, interval_s: intervalS }),
           signal: controller.signal,
         });
-        // count:0 no debería volver nunca. Si vuelve, algo lo cortó.
-        if (!stopped) {
-          onError(`el bucle de keepalive terminó (HTTP ${res.status}); reintentando`);
+        if (!res.ok) {
+          onError(`el keepalive devolvió HTTP ${res.status}; reintentando`);
+          await new Promise((r) => setTimeout(r, 2000));
         }
+        // Ráfaga completada: se encadena la siguiente sin pausa, para que la
+        // imagen no quede desatendida ni un instante.
       } catch (err) {
         if (stopped) return;
         onError(`keepalive interrumpido: ${err instanceof Error ? err.message : String(err)}`);
+        await new Promise((r) => setTimeout(r, 2000));
       }
-      if (stopped) return;
-      await new Promise((r) => setTimeout(r, 2000));
     }
   };
 

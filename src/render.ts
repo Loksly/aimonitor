@@ -1,14 +1,17 @@
 import { freemem, totalmem } from 'node:os';
 import { createCanvas, type Canvas, type SKRSContext2D } from '@napi-rs/canvas';
-import { PALETTE, STATE_COLOR, STATE_LABEL, STATE_PRIORITY, ratioColor, type Config } from './config.ts';
+import { PALETTE, STATE_COLOR, STATE_LABEL, STATE_PRIORITY, ratioColor, tempColor, vitalColor, type Config } from './config.ts';
 import { COND, MONO, MONO_BOLD, drawClipped, drawTracked, fitSize, registerFonts } from './fonts.ts';
-import { clock, countdown, elapsed, money, percent, shortId, tokens } from './format.ts';
-import { claims, plan, pruneZombies, type Tile } from './select.ts';
-import type { SessionRecord, Shift, UsageSnapshot, Weight } from './types.ts';
+import { clock, countdown, elapsed, gigabytes, money, percent, shortId, tokens } from './format.ts';
+import { claims, plan, pruneZombies, spareWidth, type Tile } from './select.ts';
+import { sparkBars } from './sparkline.ts';
+import type { SessionRecord, Shift, SystemSnapshot, UsageSnapshot, Weight } from './types.ts';
 
 export interface FrameInput {
   sessions: SessionRecord[];
   usage?: UsageSnapshot | null;
+  /** Vitales de la máquina. Inyectable para que fixtures y preview sean estables. */
+  system?: SystemSnapshot | null;
   config: Config;
   /** Momento del render, ms epoch. Inyectable para que el preview sea estable. */
   now?: number;
@@ -212,6 +215,13 @@ function drawSummary(ctx: SKRSContext2D, rest: SessionRecord[], x: number, y: nu
   }
 }
 
+/**
+ * Alto que consume `drawBar`, con y sin nota al pie. Se declara aquí, pegado a
+ * la función, para que quien mida antes de dibujar no tenga que deducirlo.
+ */
+export const BAR_SLOT = 68;
+export const BAR_SLOT_WITH_NOTE = 82;
+
 function drawBar(
   ctx: SKRSContext2D,
   x: number,
@@ -222,8 +232,10 @@ function drawBar(
   ratio: number,
   note: string | null,
   cfg: Config,
+  /** Por defecto el semáforo de las casillas; la columna de sistema pasa el suyo. */
+  colorFn: (r: number, t: Config['thresholds']) => string = ratioColor,
 ): number {
-  const color = ratioColor(Math.min(1, ratio), cfg.thresholds);
+  const color = colorFn(Math.min(1, ratio), cfg.thresholds);
   drawTracked(ctx, label, x, y, { size: 18, family: COND, tracking: 3, smallCaps: true, color: PALETTE.INK_DIM });
   drawTracked(ctx, right, x + w, y, { size: 20, family: MONO_BOLD, color, align: 'right' });
 
@@ -315,6 +327,165 @@ function drawRail(
   }
 }
 
+
+/** Una cifra grande con su rótulo debajo. */
+function drawStat(ctx: SKRSContext2D, x: number, y: number, value: string, label: string, color: string, size: number): void {
+  drawTracked(ctx, value, x, y, { size, family: MONO_BOLD, color, tracking: -0.5 });
+  drawTracked(ctx, label, x, y + 17, {
+    size: 13,
+    family: COND,
+    tracking: 2.4,
+    smallCaps: true,
+    color: PALETTE.INK_FAINT,
+  });
+}
+
+/**
+ * Columna de vitales que ocupa el ancho sobrante cuando hay pocas sesiones.
+ *
+ * Toda la tinta es apagada (`INK_DIM`/`INK_FAINT`) mientras las cosas van bien:
+ * quien tiene que reclamar la atención es una consola bloqueada, no el disco.
+ * Sólo al cruzar los umbrales aparece el ámbar o el rojo, y entonces sí compite,
+ * que es justo lo que se quiere.
+ */
+function drawSystem(
+  ctx: SKRSContext2D,
+  sys: SystemSnapshot,
+  usage: UsageSnapshot | null | undefined,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  cfg: Config,
+): void {
+  ctx.fillStyle = PALETTE.TILE_EDGE;
+  ctx.fillRect(x - 18, y + 6, 1, h - 12);
+
+  drawTracked(ctx, 'Sistema', x, y + 20, {
+    size: 19,
+    family: COND,
+    tracking: 3.4,
+    smallCaps: true,
+    color: PALETTE.INK_DIM,
+  });
+  hairline(ctx, x, y + 34, w, PALETTE.TILE_EDGE);
+
+  // 1. Cifras. Sólo se listan las que se han podido leer: en un sistema que no
+  //    sea Linux faltarán varias y la columna se adapta sin huecos.
+  const stats: { value: string; label: string; color: string }[] = [];
+  if (sys.cpuTemp !== undefined) {
+    stats.push({ value: `${Math.round(sys.cpuTemp)}°`, label: w < 380 ? 'temp' : 'temp cpu', color: tempColor(sys.cpuTemp, cfg.system) });
+  }
+  if (sys.cpuUsage !== undefined) {
+    stats.push({ value: percent(sys.cpuUsage), label: 'cpu', color: vitalColor(sys.cpuUsage, cfg.system) });
+  }
+  if (sys.mem) {
+    const r = sys.mem.used / sys.mem.total;
+    stats.push({ value: percent(r), label: 'ram', color: vitalColor(r, cfg.system) });
+  }
+  if (sys.disk) {
+    const r = sys.disk.used / sys.disk.total;
+    stats.push({ value: percent(r), label: 'disco', color: vitalColor(r, cfg.system) });
+  }
+
+  const wide = w >= cfg.system.perCoreMinWidth;
+  const narrow = w < 380;
+  const perRow = narrow ? 2 : Math.min(4, stats.length);
+  const statSize = wide ? 40 : narrow ? 26 : 32;
+  const colW = perRow > 0 ? w / perRow : w;
+  let statsBottom = y + 40;
+  stats.forEach((st, i) => {
+    const row = Math.floor(i / perRow);
+    const baseline = y + 82 + row * (statSize + 30);
+    drawStat(ctx, x + (i % perRow) * colW, baseline, st.value, st.label, st.color, statSize);
+    statsBottom = Math.max(statsBottom, baseline + 24);
+  });
+
+  // 3. Sparkline anclada abajo; se reserva su espacio antes de repartir el resto.
+  const points = usage?.blockHistory ?? [];
+  const sparkH = points.length ? 110 : 0;
+  const sparkTop = y + h - sparkH;
+
+  if (points.length) {
+    const labelBase = sparkTop - 14;
+    hairline(ctx, x, labelBase - 20, w, PALETTE.TILE_EDGE);
+    // En estrecho no caben rótulo y pico a la vez: se sacrifica el pico, que
+    // es contexto, y no el rótulo, que dice qué se está mirando.
+    drawTracked(ctx, narrow ? 'Bloques 5 h' : 'Gasto por bloque (5 h)', x, labelBase, {
+      size: 15,
+      family: COND,
+      tracking: narrow ? 1.8 : 2.6,
+      smallCaps: true,
+      color: PALETTE.INK_DIM,
+    });
+    if (!narrow) {
+      const peak = Math.max(...points.map((p) => p.cost));
+      drawTracked(ctx, `pico ${money(peak)}`, x + w, labelBase, {
+        size: 14,
+        family: MONO,
+        color: PALETTE.INK_FAINT,
+        align: 'right',
+      });
+    }
+    for (const bar of sparkBars(points.map((p) => p.cost), w, sparkH, { gap: 3 })) {
+      // El bloque en curso se destaca subiendo un escalón de tinta, no con un
+      // color de estado: el semáforo es el idioma de las consolas.
+      ctx.fillStyle = points[bar.index]?.active ? PALETTE.INK_DIM : PALETTE.INK_FAINT;
+      ctx.fillRect(x + bar.x, sparkTop + bar.y, bar.w, bar.h);
+    }
+  }
+
+  // 2. Barras por núcleo, sólo si sobra ancho y hay delta que mostrar. En el
+  //    primer render no hay muestra previa de /proc/stat y `cores` viene vacío.
+  // Banda acotada: con la máquina en reposo son 16 carriles casi vacíos, y
+  // estirarlos a toda la altura libre sería cambiar negro por gris sin añadir
+  // información. El sobrante se lo queda la sparkline, que sí varía.
+  const coresTop = statsBottom + 16;
+  const coresH = Math.min(110, sparkTop - 34 - coresTop);
+  const canShowCores = wide && !!sys.cores?.length && coresH >= 30;
+
+  // Nivel intermedio: no hay ancho para 16 carriles, pero sí para las dos
+  // barras que de verdad importan. Se reutiliza `drawBar`, el mismo primitivo
+  // del carril de consumo, con el color apagado de los vitales.
+  if (!canShowCores) {
+    // Sólo el disco. La RAM ya sale dos veces (cabecera y fila de cifras) y una
+    // tercera barra no añadiría nada; el llenado del disco, en cambio, no está
+    // en ningún otro sitio y es el vital que más pronto da un disgusto.
+    const bandTop = coresTop + 6;
+    const bandBottom = sparkTop - 34;
+    if (sys.disk && bandTop + BAR_SLOT <= bandBottom) {
+      const r = sys.disk.used / sys.disk.total;
+      const note =
+        bandTop + BAR_SLOT_WITH_NOTE <= bandBottom
+          ? `${gigabytes(sys.disk.used)} de ${gigabytes(sys.disk.total)} · quedan ${gigabytes(sys.disk.total - sys.disk.used)}`
+          : null;
+      drawBar(ctx, x, bandTop, w, `Disco ${sys.disk.path}`, percent(r), r, note, cfg, (v) => vitalColor(v, cfg.system));
+    }
+  }
+
+  if (canShowCores && sys.cores) {
+    // A la derecha: bajo la primera cifra ya está su propio rótulo y se pisaban.
+    drawTracked(ctx, `${sys.cores.length} núcleos`, x + w, coresTop - 6, {
+      size: 14,
+      family: COND,
+      tracking: 2.4,
+      smallCaps: true,
+      color: PALETTE.INK_FAINT,
+      align: 'right',
+    });
+    const barsTop = coresTop + 6;
+    const barsH = coresH - 6;
+    // Escala absoluta contra el 100 %: normalizar contra el núcleo más ocupado
+    // haría parecer saturada una máquina en reposo.
+    for (const bar of sparkBars(sys.cores, w, barsH, { gap: 3, max: 1 })) {
+      ctx.fillStyle = PALETTE.TILE_OFF;
+      ctx.fillRect(x + bar.x, barsTop, bar.w, barsH);
+      ctx.fillStyle = vitalColor(sys.cores[bar.index] ?? 0, cfg.system);
+      ctx.fillRect(x + bar.x, barsTop + bar.y, bar.w, bar.h);
+    }
+  }
+}
+
 /** Dibuja el frame completo en un canvas. Único camino de render: preview y panel comparten esto. */
 export function renderCanvas(input: FrameInput): Canvas {
   const cfg = input.config;
@@ -356,6 +527,19 @@ export function renderCanvas(input: FrameInput): Canvas {
     tx += p.tileWidth + cfg.tile.gap;
   }
   if (p.overflow.length) drawSummary(ctx, p.overflow, tx, bodyTop, p.summaryWidth, bodyH);
+
+  // Con pocas casillas sobra un hueco considerable (1088 px con una sola
+  // sesión). Se rellena con los vitales de la máquina. Cuando hay desbordamiento
+  // el sobrante es cero, así que esta columna y el resumen de sesiones no pueden
+  // coincidir: son excluyentes por construcción.
+  const usedW = p.tiles.length * p.tileWidth + Math.max(0, p.tiles.length - 1) * cfg.tile.gap;
+  const spare = spareWidth(p, available, cfg);
+  if (cfg.system.enabled && input.system && spare >= cfg.system.minWidth) {
+    const sx = m + usedW + cfg.tile.gap + 18;
+    // Se respira 20 px antes del separador del carril: si no, las barras y el
+    // rótulo del pico quedan pegados a la línea y parece un error de recorte.
+    drawSystem(ctx, input.system, input.usage, sx, bodyTop, spare - cfg.tile.gap - 38, bodyH, cfg);
+  }
 
   if (cfg.rail.enabled) {
     drawRail(ctx, input.usage, cfg.width - m - railW, bodyTop, railW, bodyH, now, cfg);
