@@ -23,6 +23,13 @@ export interface SessionRecord {
   event: string;
   /** Ficheros pendientes de commit; lo rellena el daemon, no el hook. */
   dirty?: number;
+  /**
+   * Si está presente, la casilla es una reunión y el número grande cuenta
+   * hacia atrás hasta este instante en lugar de contar el tiempo transcurrido.
+   * Viaja como una casilla más para heredar el orden, los pesos y el reparto
+   * de anchos sin duplicar nada de eso.
+   */
+  startsAt?: number;
 }
 
 /**
@@ -90,4 +97,16 @@ export interface SystemSnapshot {
   disk?: { used: number; total: number; path: string };
   /** Segundos desde el arranque. */
   uptime?: number;
+}
+
+/** Una reunión del calendario, ya resuelta a instantes absolutos. */
+export interface Meeting {
+  title: string;
+  /** Inicio y fin en ms epoch, con la zona horaria ya aplicada. */
+  startsAt: number;
+  endsAt: number;
+  /** Aceptada con reservas: se pinta igual pero se marca. */
+  tentative?: boolean;
+  /** Marcada como privada en el calendario: nunca se muestra el título. */
+  private?: boolean;
 }

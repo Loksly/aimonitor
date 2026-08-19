@@ -93,16 +93,26 @@ export function drawTracked(ctx: SKRSContext2D, text: string, x: number, y: numb
   return total;
 }
 
-/** Recorta con elipsis hasta que quepa en `maxWidth`. */
+/**
+ * Recorta con elipsis hasta que quepa en `maxWidth`.
+ *
+ * La búsqueda es binaria y no carácter a carácter: medir es caro (se recorre
+ * glifo a glifo para poder aplicar tracking), así que el bucle ingenuo es
+ * cuadrático. Con detalles de 240 caracteres eso costaba cientos de
+ * milisegundos por frame.
+ */
 export function truncate(ctx: SKRSContext2D, text: string, maxWidth: number, o: TextOpts): string {
   if (measureTracked(ctx, text, o) <= maxWidth) return text;
   const chars = [...text];
-  while (chars.length > 1) {
-    chars.pop();
-    const candidate = chars.join('').trimEnd() + '…';
-    if (measureTracked(ctx, candidate, o) <= maxWidth) return candidate;
+  const candidate = (n: number) => `${chars.slice(0, n).join('').trimEnd()}…`;
+  let lo = 0;
+  let hi = chars.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (measureTracked(ctx, candidate(mid), o) <= maxWidth) lo = mid;
+    else hi = mid - 1;
   }
-  return '…';
+  return lo > 0 ? candidate(lo) : '…';
 }
 
 /**
@@ -125,4 +135,53 @@ export function drawClipped(
   o: TextOpts,
 ): number {
   return drawTracked(ctx, truncate(ctx, text, maxWidth, o), x, y, o);
+}
+
+/**
+ * Mayor prefijo de `text` que cabe en `maxWidth`, retrocediendo al último
+ * espacio para no partir palabras. Si una sola palabra ya no cabe, corta duro:
+ * más vale partir una ruta larga que dejar la línea vacía.
+ *
+ * La búsqueda es binaria porque medir es caro: `measureTracked` recorre carácter
+ * a carácter para poder aplicar tracking.
+ */
+function fitPrefix(ctx: SKRSContext2D, text: string, maxWidth: number, o: TextOpts): number {
+  if (measureTracked(ctx, text, o) <= maxWidth) return text.length;
+  let lo = 1;
+  let hi = text.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (measureTracked(ctx, text.slice(0, mid), o) <= maxWidth) lo = mid;
+    else hi = mid - 1;
+  }
+  const space = text.lastIndexOf(' ', lo);
+  return space > 0 ? space : lo;
+}
+
+/**
+ * Reparte el texto en como mucho `maxLines` líneas que quepan en `maxWidth`.
+ * La última se recorta con elipsis si aún sobra texto, así que nunca desborda.
+ */
+export function wrapLines(
+  ctx: SKRSContext2D,
+  text: string,
+  maxWidth: number,
+  maxLines: number,
+  o: TextOpts,
+): string[] {
+  const clean = text.replace(/\s+/g, ' ').trim();
+  if (!clean || maxLines < 1 || maxWidth <= 0) return [];
+
+  const lines: string[] = [];
+  let rest = clean;
+  while (rest && lines.length < maxLines) {
+    if (lines.length === maxLines - 1) {
+      lines.push(truncate(ctx, rest, maxWidth, o));
+      break;
+    }
+    const cut = fitPrefix(ctx, rest, maxWidth, o);
+    lines.push(rest.slice(0, cut).trimEnd());
+    rest = rest.slice(cut).trimStart();
+  }
+  return lines;
 }

@@ -29,14 +29,31 @@ test('Selection: pruneZombies drops idle active sessions', () => {
   const records = [
     mockRecord('active-fresh', 'activa', 5000),
     mockRecord('active-stale', 'activa', 60000, 45000), // last updated 45s ago
-    mockRecord('permiso-stale', 'permiso', 60000, 45000), // permiso never pruned
+    mockRecord('permiso-stale', 'permiso', 60000, 45000), // esperando al operador
   ];
-  
-  const pruned = pruneZombies(records, t0, 30000); // 30s threshold
+
+  // 30 s para las activas, una hora para el resto.
+  const pruned = pruneZombies(records, t0, 30000, 3600_000);
   assert.strictEqual(pruned.length, 2);
   assert.strictEqual(pruned.some(r => r.session_id === 'active-stale'), false);
   assert.strictEqual(pruned.some(r => r.session_id === 'active-fresh'), true);
+  // Una sesión que espera permiso no se descarta por llevar un rato: es
+  // justamente lo que el panel existe para enseñar.
   assert.strictEqual(pruned.some(r => r.session_id === 'permiso-stale'), true);
+});
+
+test('Selection: un registro huérfano acaba cayendo, esté en el estado que esté', () => {
+  // `SessionEnd` no llega si matas el terminal o la máquina suspende, así que
+  // sin esta red quedan casillas de horas conviviendo con las de verdad.
+  const viejo = 10 * 3600_000;
+  const records = [
+    mockRecord('listo-muerto', 'listo', viejo, viejo),
+    mockRecord('inactiva-muerta', 'inactiva', viejo, viejo),
+    mockRecord('permiso-muerto', 'permiso', viejo, viejo),
+    mockRecord('listo-reciente', 'listo', 60000, 60000),
+  ];
+  const pruned = pruneZombies(records, t0, 15 * 60_000, 2 * 3600_000);
+  assert.deepStrictEqual(pruned.map(r => r.session_id), ['listo-reciente']);
 });
 
 test('Selection: ordering sessions by priority and time waiting', () => {

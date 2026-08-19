@@ -12,11 +12,21 @@ export function claims(r: SessionRecord): boolean {
 }
 
 /**
- * Descarta sesiones zombi: `activa` sin refrescar en mucho tiempo significa
- * que el proceso murió sin llegar a emitir SessionEnd.
+ * Descarta las sesiones que ya no existen.
+ *
+ * El hook borra su registro al recibir `SessionEnd`, pero ese evento no llega
+ * si matas el terminal, la máquina suspende o Claude Code se cae. Sin una red
+ * de seguridad aquí, esos registros se quedan en el panel para siempre: se han
+ * visto casillas de diez horas conviviendo con las de verdad.
+ *
+ * Hay dos plazos porque las señales son distintas. Una sesión `activa` dice
+ * estar trabajando, así que si lleva un rato sin emitir ningún evento está
+ * muerta. Las demás esperan legítimamente al operador —para eso está el
+ * panel— y merecen mucha más manga ancha, pero no la eternidad: si llevas
+ * horas sin tocarla, te has ido a casa.
  */
-export function pruneZombies(records: SessionRecord[], now: number, zombieMs: number): SessionRecord[] {
-  return records.filter((r) => !(r.state === 'activa' && now - r.updated > zombieMs));
+export function pruneZombies(records: SessionRecord[], now: number, zombieMs: number, staleMs: number): SessionRecord[] {
+  return records.filter((r) => now - r.updated <= (r.state === 'activa' ? zombieMs : staleMs));
 }
 
 /**
@@ -43,14 +53,15 @@ export function order(records: SessionRecord[]): SessionRecord[] {
  * Si se encendieran varias a la vez, ninguna ganaría.
  */
 export function assignWeights(ordered: SessionRecord[]): Tile[] {
-  let solidUsed = false;
+  // Una reunión que reclama se lleva el peso sólido por delante de cualquier
+  // consola: el permiso te espera, la reunión no. Si sólo informa (peso gris,
+  // aún lejos) no roba nada y el sólido vuelve a la consola más urgente.
+  const claiming = ordered.filter(claims);
+  const winner = claiming.find((r) => r.startsAt !== undefined) ?? claiming[0];
+
   return ordered.map((record) => {
     if (!claims(record)) return { record, weight: 'quieta' as Weight };
-    if (!solidUsed) {
-      solidUsed = true;
-      return { record, weight: 'solido' as Weight };
-    }
-    return { record, weight: 'marcada' as Weight };
+    return { record, weight: record === winner ? ('solido' as Weight) : ('marcada' as Weight) };
   });
 }
 

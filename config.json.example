@@ -9,7 +9,9 @@
   "tile": {
     "min": 320,
     "max": 430,
-    "gap": 12
+    "gap": 12,
+    "//detailLines": "Líneas que puede ocupar el mensaje antes de recortar. Crecen hacia arriba, hacia el aire que dejaba el nombre del proyecto, así que el contador de tiempo no se mueve. Ponlo a 1 para el comportamiento anterior.",
+    "detailLines": 3
   },
   
   "margin": 14,
@@ -22,7 +24,11 @@
     "periodMs": 480000
   },
   
+  "//zombieMs": "Una sesión 'activa' sin refrescar más de esto está muerta.",
   "zombieMs": 900000,
+
+  "//staleMs": "Red bajo SessionEnd, que no llega si matas el terminal o la máquina suspende: cualquier sesión sin señales más de esto se descarta y se borra su fichero, esté en el estado que esté. Súbelo si dejas consolas esperando permiso muchas horas.",
+  "staleMs": 7200000,
   
   "usage": {
     "//mode": "'max' pinta ventanas de 5 h y semana; 'api' pinta gasto en USD contra los topes de abajo",
@@ -57,6 +63,34 @@
     "alert": 0.95,
     "tempWarn": 85,
     "tempAlert": 95
+  },
+
+  "//calendar": "OPCIONAL Y APAGADO POR DEFECTO. Requiere la dependencia opcional `ical.js` (npm install -g ical.js). Aviso de la próxima reunión desde un calendario ICS publicado (Outlook Web -> Configuración -> Calendario -> Calendarios compartidos -> Publicar). OJO: esa URL es un secreto portador, quien la tenga lee tu agenda entera sin autenticarse. Guarda este fichero con permisos 600.",
+  "calendar": {
+    "enabled": false,
+    "//icsUrl": "Una URL, o una lista de ellas para vigilar varios calendarios a la vez: se funden en una sola agenda, se quitan los duplicados y gana la reunión más próxima. Ejemplo con varios: [\"https://.../trabajo.ics\", \"https://.../personal.ics\"]",
+    "icsUrl": "",
+    "refreshMs": 300000,
+    "timeoutMs": 20000,
+    "showTitle": true,
+    "titleMaxChars": 34,
+    "//ignorePatterns": "Los bloques de concentración de Outlook van marcados como ocupado; sin esto encenderían el panel media mañana.",
+    "ignorePatterns": ["tiempo de concentración", "focus time"],
+    "//minutes": "Minutos restantes para cada escalón de color: gris por encima de 120, luego teal, azul, ámbar y rojo sólido.",
+    "minutes": { "grey": 120, "listo": 30, "espera": 10, "permiso": 3 }
+  },
+
+  "//easterEgg": "El guiño: cada cuarto de hora el panel deja el cuadro de mando y pone una carrera de plataformas de 8 bits. El resultado varía en cada pasada (unas veces se lo pasa, otras se cae por un hueco o se lo come un bicho). El dibujo que viene de serie es original; si prefieres otra cosa, apunta 'source' a un vídeo, un GIF o un DIRECTORIO de clips de tu disco (se elige uno al azar en cada pasada) y se despieza con ffmpeg. Un directorio vacío vuelve a la animación integrada. Sólo se cachean los 'cacheClips' últimos: cada clip despiezado son decenas de MB. OJO con los fps: el bus del panel comprime cada frame, así que el techo lo pone el contenido (~12 fps con colores planos, ~5 con imagen fotográfica).",
+  "easterEgg": {
+    "enabled": true,
+    "everyMs": 900000,
+    "fps": 12,
+    "//speed": "1 = tiempo real; 0.5 = mitad de velocidad enseñando todos los frames del origen. OJO: fps/speed debe dividir de forma exacta a la tasa del clip, o los descartes salen irregulares y la imagen da tirones.",
+    "speed": 1,
+    "source": "",
+    "maxSeconds": 30,
+    "cacheClips": 3,
+    "skipWhenBusy": true
   },
 
   "trcc": {

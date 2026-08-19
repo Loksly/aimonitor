@@ -1,7 +1,7 @@
 import { freemem, totalmem } from 'node:os';
 import { createCanvas, type Canvas, type SKRSContext2D } from '@napi-rs/canvas';
 import { PALETTE, STATE_COLOR, STATE_LABEL, STATE_PRIORITY, ratioColor, tempColor, vitalColor, type Config } from './config.ts';
-import { COND, MONO, MONO_BOLD, drawClipped, drawTracked, fitSize, registerFonts } from './fonts.ts';
+import { COND, MONO, MONO_BOLD, drawClipped, drawTracked, fitSize, registerFonts, wrapLines } from './fonts.ts';
 import { clock, countdown, elapsed, gigabytes, money, percent, shortId, tokens } from './format.ts';
 import { claims, plan, pruneZombies, spareWidth, type Tile } from './select.ts';
 import { sparkBars } from './sparkline.ts';
@@ -131,8 +131,11 @@ function drawTile(ctx: SKRSContext2D, t: Tile, x: number, y: number, w: number, 
 
   // 1. Rótulo de estado + id corto (incluyendo proveedor)
   const labelOpts = { size: 21, family: COND, tracking: 3.6, smallCaps: true, color: ink.accent } as const;
-  drawTracked(ctx, STATE_LABEL[r.state], cx, y + 32, labelOpts);
-  const provIdLabel = `${r.provider.toUpperCase()} · ${shortId(r.session_id)}`;
+  drawTracked(ctx, r.startsAt === undefined ? STATE_LABEL[r.state] : 'Reunión', cx, y + 32, labelOpts);
+  const provIdLabel =
+    r.startsAt === undefined
+      ? `${r.provider.toUpperCase()} · ${shortId(r.session_id)}`
+      : clock(new Date(r.startsAt));
   drawTracked(ctx, provIdLabel, x + w - 18, y + 31, {
     size: 15,
     family: MONO,
@@ -143,20 +146,36 @@ function drawTile(ctx: SKRSContext2D, t: Tile, x: number, y: number, w: number, 
   // 2. Regla fina
   hairline(ctx, cx, y + 46, cw, ink.rule);
 
-  // 5. Tiempo transcurrido, abajo y grande: la pregunta real es cuánto lleva así.
+  // 5. El número grande, abajo. En una consola es cuánto lleva así; en una
+  //    reunión es cuánto queda, que es la misma pregunta mirando al revés.
   const footerBase = y + h - 16;
   const elapsedSize = Math.round(Math.min(60, Math.max(38, h * 0.14)));
   const elapsedBase = footerBase - 26;
-  drawTracked(ctx, elapsed(now - r.since), cx, elapsedBase, {
+  const big =
+    r.startsAt === undefined
+      ? elapsed(now - r.since)
+      : r.startsAt <= now
+        ? 'ahora'
+        : countdown(r.startsAt - now);
+  drawTracked(ctx, big, cx, elapsedBase, {
     size: elapsedSize,
     family: MONO_BOLD,
     color: ink.strong,
     tracking: -1,
   });
 
-  // 4. Detalle técnico, justo encima del tiempo
+  // 4. Detalle técnico, justo encima del tiempo. Se reparte en varias líneas:
+  //    con una sola, un mensaje de asistente se cortaba a media frase y no se
+  //    entendía de qué iba la consola. Las líneas crecen hacia arriba, hacia el
+  //    aire que dejaba el nombre del proyecto, y el contador no se mueve.
+  const detailOpts = { size: 17, family: MONO, color: ink.mid } as const;
+  const detailLead = Math.round(detailOpts.size * 1.35);
+  const detailLines = wrapLines(ctx, r.detail, cw, Math.max(1, cfg.tile.detailLines), detailOpts);
   const detailBase = elapsedBase - elapsedSize * 0.8 - 14;
-  drawClipped(ctx, r.detail, cx, detailBase, cw, { size: 17, family: MONO, color: ink.mid });
+  detailLines.forEach((line, i) => {
+    drawTracked(ctx, line, cx, detailBase - (detailLines.length - 1 - i) * detailLead, detailOpts);
+  });
+  const detailTop = detailBase - Math.max(0, detailLines.length - 1) * detailLead;
 
   // 3. Nombre del proyecto: lo que identifica la consola. Se encoge hasta
   //    donde haga falta antes de aceptar un recorte con elipsis.
@@ -168,7 +187,7 @@ function drawTile(ctx: SKRSContext2D, t: Tile, x: number, y: number, w: number, 
   };
   projOpts.size = fitSize(ctx, r.project, cw, projOpts, 26);
   const midTop = y + 54;
-  const midBottom = detailBase - 24;
+  const midBottom = detailTop - 24;
   const projBase = Math.round((midTop + midBottom) / 2 + projOpts.size * 0.36);
   drawClipped(ctx, r.project, cx, projBase, cw, projOpts);
 
@@ -495,7 +514,7 @@ export function renderCanvas(input: FrameInput): Canvas {
   const canvas = createCanvas(cfg.width, cfg.height);
   const ctx = canvas.getContext('2d');
 
-  const sessions = pruneZombies(input.sessions, now, cfg.zombieMs);
+  const sessions = pruneZombies(input.sessions, now, cfg.zombieMs, cfg.staleMs);
 
   // Apagado en reposo: lo que se gasta con las horas es el backlight.
   if (sessions.length === 0 && cfg.blankWhenIdle) {

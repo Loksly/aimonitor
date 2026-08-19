@@ -107,6 +107,17 @@ export const SCENARIOS: Record<string, SessionRecord[]> = {
     rec({ id: 'b2c3d4e5-2222', project: 'trcc-linux', state: 'activa', detail: 'Read src/adapters/device/transport.py', ago: s(24), dirty: 0 }),
   ],
 
+  /** Reunión a 4 minutos: se lleva el peso sólido por delante del permiso. */
+  reunion: [
+    {
+      session_id: 'meeting-1', provider: 'claude', state: 'espera',
+      detail: '', project: 'Comité de arquitectura',
+      since: T0 + min(4), updated: T0, event: 'Meeting', startsAt: T0 + min(4),
+    },
+    rec({ id: 'a1b2c3d4-1111', project: 'aimonitor', state: 'permiso', detail: 'Bash: npm publish', ago: min(2), dirty: 3 }),
+    rec({ id: 'b2c3d4e5-2222', project: 'trcc-linux', state: 'activa', detail: 'Read transport.py', ago: s(24), dirty: 0 }),
+  ],
+
   'nombre-largo': [
     rec({ id: 'e5f6a7b8-5555', project: 'infra-terraform-produccion', state: 'permiso', detail: 'Write /etc/systemd/system/claude-lcd.service con contenido muy largo', ago: min(7) + s(22), dirty: 37 }),
     rec({ id: 'f6a7b8c9-6666', project: 'monorepo-frontend-cliente', state: 'listo', detail: 'SubagentStop', ago: min(2), dirty: 0, provider: 'gemini' }),

@@ -59,5 +59,8 @@
     "marked": "^18.0.9",
     "tsx": "^4.23.12",
     "typescript": "^5.9.3"
+  },
+  "optionalDependencies": {
+    "ical.js": "^2.2.1"
   }
 }

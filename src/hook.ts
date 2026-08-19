@@ -11,6 +11,7 @@
 import { mkdirSync, writeFileSync, renameSync, rmSync, readFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { SESSIONS_DIR } from './config.ts';
+import { redact } from './redact.ts';
 import type { SessionRecord, SessionState, Provider } from './types.ts';
 
 // No fallar ruidosamente para no romper la sesión del asistente de IA principal
@@ -37,9 +38,19 @@ function humanize(value: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1);
 }
 
-function truncate(text: string, max = 80): string {
-  const flat = text.replace(/\s+/g, ' ').trim();
-  return flat.length > max ? `${flat.slice(0, max - 3)}...` : flat;
+/**
+ * Recorte de guardado, no de presentación.
+ *
+ * El límite es generoso a propósito: quien decide cuánto cabe es el render, que
+ * conoce el ancho real de la casilla y reparte el texto en varias líneas. Si el
+ * hook cortara al tamaño de una línea, como hacía antes con 80 caracteres, el
+ * mensaje llegaría ya mutilado y ninguna cantidad de líneas lo recuperaría.
+ */
+function truncate(text: string, max = 240): string {
+  // Se tapa **antes** de recortar: si no, un secreto podría quedar partido por
+  // la elipsis y colarse a medias.
+  const flat = redact(text).replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
 }
 
 /**

@@ -57,7 +57,17 @@ export interface Config {
   /** Carril de consumo a la derecha. */
   rail: { enabled: boolean; width: number };
   /** Ancho de casilla; con una sola sesión no se estira a todo el panel. */
-  tile: { min: number; max: number; gap: number };
+  tile: {
+    min: number;
+    max: number;
+    gap: number;
+    /**
+     * Líneas que puede ocupar el detalle antes de recortar con elipsis. Crecen
+     * hacia arriba, hacia el hueco que dejaba el nombre del proyecto, así que
+     * no empujan el contador de tiempo.
+     */
+    detailLines: number;
+  };
   /** Márgenes y cabecera. */
   margin: number;
   headerHeight: number;
@@ -67,6 +77,12 @@ export interface Config {
   pixelShift: { enabled: boolean; amplitude: number; periodMs: number };
   /** Sesión `activa` sin refrescar más de esto → zombi, se descarta. */
   zombieMs: number;
+  /**
+   * Cualquier sesión sin refrescar más de esto se descarta, esté en el estado
+   * que esté. Es la red bajo `SessionEnd`, que no llega si el terminal muere de
+   * mala manera. Súbelo si sueles dejar consolas esperando permiso muchas horas.
+   */
+  staleMs: number;
   /** Consumo. */
   usage: {
     mode: 'max' | 'api';
@@ -117,6 +133,108 @@ export interface Config {
     tempWarn: number;
     tempAlert: number;
   };
+  /**
+   * Aviso de la próxima reunión, leído de un calendario ICS publicado.
+   *
+   * Desactivado por defecto: requiere publicar el calendario en Outlook Web, y
+   * la URL resultante **es un secreto portador** — quien la tenga lee la agenda
+   * entera sin autenticarse. Va en config.json, que se crea con permisos 600.
+   */
+  calendar: {
+    enabled: boolean;
+    /**
+     * URL del `.ics` publicado, o una lista de ellas para vigilar varios
+     * calendarios a la vez (trabajo y personal, por ejemplo). Se funden en una
+     * sola agenda y gana la reunión más próxima.
+     *
+     * Trátalas como contraseñas: cada una da acceso de lectura a esa agenda
+     * entera sin autenticarse.
+     */
+    icsUrl: string | string[];
+    refreshMs: number;
+    timeoutMs: number;
+    /** Se muestra el título; con `false`, sólo hora y cuenta atrás. */
+    showTitle: boolean;
+    /** El título se recorta con elipsis a partir de aquí. */
+    titleMaxChars: number;
+    /**
+     * Asuntos que no son reuniones. Los bloques de concentración de Outlook van
+     * marcados como «ocupado» y, sin esto, encenderían el panel media mañana.
+     */
+    ignorePatterns: string[];
+    /**
+     * Escalera de inminencia, en minutos restantes. Por encima de `grey` la
+     * reunión se pinta apagada: informa, no reclama.
+     */
+    minutes: { grey: number; listo: number; espera: number; permiso: number };
+  };
+  /**
+   * El guiño: cada cierto rato el panel deja el cuadro de mando y pone una
+   * animación de plataformas de 8 bits.
+   *
+   * El dibujo que viene de serie es original. Si prefieres otra cosa, `source`
+   * apunta a un vídeo o GIF **de tu disco**, que se despieza con `ffmpeg`; en
+   * el paquete no viaja material de nadie más.
+   */
+  easterEgg: {
+    enabled: boolean;
+    /**
+     * Cada cuánto sale, en ms. Va contra el reloj de pared: con 15 minutos
+     * salta en punto, y cuarto, y media, no a los 15 minutos de arrancar.
+     */
+    everyMs: number;
+    /**
+     * Fotogramas por segundo. El bus del panel comprime cada frame, así que el
+     * techo depende del contenido: ~12 fps con colores planos, ~5 con imagen
+     * fotográfica. Pedir más de lo que da sólo hace que se tiren frames.
+     */
+    fps: number;
+    /**
+     * Vacío = la animación integrada. Si no, la ruta de un vídeo o GIF local,
+     * o la de un **directorio** de clips del que se elige uno distinto cada
+     * vez. Un directorio vacío vuelve a la animación integrada.
+     */
+    source: string;
+    /**
+     * Velocidad de reproducción. 1 = tiempo real; 0,5 = la mitad.
+     *
+     * El panel no pasa de unos 8 fps, así que a tiempo real cada frame se come
+     * mucho movimiento y el desplazamiento lateral da tirones. Bajarla enseña
+     * **todos** los frames del origen en vez de descartar: se ve más suave, a
+     * cambio de que la escena dure más.
+     *
+     * El cociente `fps / speed` es la cadencia a la que se despieza, y debe
+     * dividir de forma exacta a la del clip.
+     */
+    speed: number;
+    /** Segundos que dura en el panel como mucho (no del clip: ver `speed`). */
+    maxSeconds: number;
+    /**
+     * Escalar con vecino más próximo y por factor entero. Es lo correcto para
+     * capturas de juegos retro; ponlo a `false` para vídeo de imagen real, que
+     * con vecino sale dentado.
+     */
+    pixelated: boolean;
+    /**
+     * Recorte de ffmpeg (`ancho:alto:x:y`) aplicado antes de escalar.
+     *
+     * El panel es un 4,16:1 y una captura 4:3 sólo llena el 27 % del ancho.
+     * Quedarse con una franja apaisada del original permite escalarla mucho
+     * más. Vacío = sin recorte.
+     */
+    crop: string;
+    /**
+     * Clips despiezados que se guardan en `~/.aimonitor/easteregg/`. Cada uno
+     * son decenas de MB en PNGs, así que un directorio con muchas partidas
+     * grabadas se comería el disco sin este tope.
+     */
+    cacheClips: number;
+    /**
+     * No interrumpir cuando algo reclama al operador. Una sesión esperando
+     * permiso o una reunión encima no son momento para ponerse a jugar.
+     */
+    skipWhenBusy: boolean;
+  };
   /** Salida al panel, vía la API REST de `trcc serve`. */
   trcc: {
     bin: string;
@@ -160,12 +278,13 @@ export const DEFAULT_CONFIG: Config = {
   rail: { enabled: true, width: 356 },
   // min 320 => 4 casillas con carril (5 sin él) sobre 1920 px, incluso
   // reservando la columna de resumen cuando hay desbordamiento.
-  tile: { min: 320, max: 430, gap: 12 },
+  tile: { min: 320, max: 430, gap: 12, detailLines: 3 },
   margin: 14,
   headerHeight: 60,
   spineWidth: 7,
   pixelShift: { enabled: true, amplitude: 2, periodMs: 8 * 60_000 },
   zombieMs: 15 * 60_000,
+  staleMs: 2 * 60 * 60_000,
   usage: {
     mode: 'max',
     bin: 'ccusage',
@@ -184,6 +303,28 @@ export const DEFAULT_CONFIG: Config = {
     alert: 0.95,
     tempWarn: 85,
     tempAlert: 95,
+  },
+  calendar: {
+    enabled: false,
+    icsUrl: '',
+    refreshMs: 5 * 60_000,
+    timeoutMs: 20_000,
+    showTitle: true,
+    titleMaxChars: 34,
+    ignorePatterns: ['tiempo de concentración', 'focus time'],
+    minutes: { grey: 120, listo: 30, espera: 10, permiso: 3 },
+  },
+  easterEgg: {
+    enabled: true,
+    everyMs: 15 * 60_000,
+    fps: 12,
+    speed: 1,
+    source: '',
+    maxSeconds: 30,
+    pixelated: true,
+    crop: '',
+    cacheClips: 3,
+    skipWhenBusy: true,
   },
   trcc: {
     bin: 'trcc',
@@ -252,4 +393,20 @@ export function tempColor(celsius: number, cfg: Config['system']): string {
   if (celsius >= cfg.tempAlert) return STATE_COLOR.permiso;
   if (celsius >= cfg.tempWarn) return STATE_COLOR.espera;
   return PALETTE.INK_DIM;
+}
+
+/**
+ * Estado de una reunión según lo que falte para empezar, para que herede el
+ * mismo semáforo que las consolas en lugar de inventar un idioma nuevo.
+ *
+ * Por encima de `grey` se pinta como `inactiva`: aparece, informa, pero no
+ * reclama. Una reunión ya empezada es lo más urgente que puede haber en la
+ * pantalla, porque es lo único que no espera.
+ */
+export function meetingState(minutesLeft: number, m: Config['calendar']['minutes']): SessionState {
+  if (minutesLeft <= m.permiso) return 'permiso';
+  if (minutesLeft <= m.espera) return 'espera';
+  if (minutesLeft <= m.listo) return 'listo';
+  if (minutesLeft <= m.grey) return 'activa';
+  return 'inactiva';
 }
